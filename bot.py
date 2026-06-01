@@ -202,7 +202,7 @@ def admin_handler(message):
 def adduser_command(message):
     """
     Добавить пользователя
-    Использование: /adduser 123456789 username
+    Использование: /adduser USER_ID username
     """
     if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ Нет доступа")
@@ -239,7 +239,7 @@ def adduser_command(message):
                 "✅ Вам выдан доступ к боту!\n\n"
                 "Нажмите /start для начала работы."
             )
-        except:
+        except Exception:
             bot.send_message(message.chat.id, "⚠️ Не удалось уведомить пользователя")
 
     except ValueError:
@@ -250,7 +250,7 @@ def adduser_command(message):
 def removeuser_command(message):
     """
     Удалить пользователя
-    Использование: /removeuser 123456789
+    Использование: /removeuser USER_ID
     """
     if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ Нет доступа")
@@ -288,7 +288,7 @@ def removeuser_command(message):
 def banuser_command(message):
     """
     Забанить пользователя
-    Использование: /banuser 123456789
+    Использование: /banuser USER_ID
     """
     if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ Нет доступа")
@@ -319,7 +319,7 @@ def banuser_command(message):
 def unbanuser_command(message):
     """
     Разбанить пользователя
-    Использование: /unbanuser 123456789
+    Использование: /unbanuser USER_ID
     """
     if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ Нет доступа")
@@ -521,7 +521,7 @@ def handle_state(message):
                     "✅ Вам выдан доступ к боту!\n"
                     "Нажмите /start для начала работы."
                 )
-            except:
+            except Exception:
                 bot.send_message(
                     message.chat.id,
                     "⚠️ Пользователь не найден в Telegram или не запускал бота"
@@ -606,6 +606,42 @@ def download_file_safe(file_id):
                 return None, str(e)
 
 
+def _log_ocr_debug(user_id, chat_id, raw_text):
+    """Пишем сырой OCR в файл для отладки сложных кейсов."""
+    try:
+        with open("ocr_debug.log", "a", encoding="utf-8") as f:
+            f.write("\n" + "=" * 80 + "\n")
+            f.write(f"USER: {user_id} | CHAT: {chat_id} | TIME: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(raw_text if raw_text else "[EMPTY OCR TEXT]")
+            f.write("\n")
+    except Exception as log_err:
+        logger.warning(f"Не удалось записать ocr_debug.log: {log_err}")
+
+
+def _is_suspicious_results(results):
+    """
+    Простая проверка качества:
+    - пусто
+    - невалидные длины/префикс ICCID
+    - PUK не 8 цифр
+    """
+    if not results:
+        return True
+
+    for r in results:
+        iccid = str(r.get("iccid", ""))
+        puk = str(r.get("puk", ""))
+
+        if not (iccid.startswith("89") and iccid.isdigit() and 18 <= len(iccid) <= 20):
+            return True
+        if not (puk.isdigit() and len(puk) == 8):
+            return True
+        if puk.startswith("89"):  # частая ошибка: взяли кусок ICCID
+            return True
+
+    return False
+
+
 def handle_image(message, file_id):
     if not check_access(message):
         return
@@ -626,6 +662,9 @@ def handle_image(message, file_id):
 
         results, raw_text, error = process_image(image_bytes, GOOGLE_VISION_API_KEY)
 
+        # debug OCR лог
+        _log_ocr_debug(user_id, message.chat.id, raw_text)
+
         bot.delete_message(message.chat.id, processing_msg.message_id)
 
         if error:
@@ -643,6 +682,15 @@ def handle_image(message, file_id):
             reply_markup=get_main_keyboard()
         )
 
+        # предупреждение о сомнительном распознавании
+        if _is_suspicious_results(results):
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Обнаружены потенциально неточные данные. "
+                "Рекомендуется проверить результат вручную.",
+                reply_markup=get_main_keyboard()
+            )
+
         total = len(user_sessions[user_id])
         if total > 0 and total % 10 == 0:
             bot.send_message(
@@ -657,7 +705,7 @@ def handle_image(message, file_id):
         logger.error(f"Ошибка user {user_id}: {e}")
         try:
             bot.delete_message(message.chat.id, processing_msg.message_id)
-        except:
+        except Exception:
             pass
         bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
 
