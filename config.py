@@ -1,2 +1,6 @@
 BOT_TOKEN = "8895102497:AAElE-0_d4gak3Q9BxQwUmXy1-4mOoFanL0"
 GOOGLE_VISION_API_KEY = "AIzaSyDBk9m4bcZq5ludyZ7Q29EbTzOaHZQMhQE"
+
+# Список админов (Telegram user_id)
+# Узнать свой ID можно у @userinfobot
+ADMIN_IDS = [6568631013,7013338924]  # ← вставьте ваш ID
